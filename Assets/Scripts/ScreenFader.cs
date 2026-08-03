@@ -1,26 +1,44 @@
+using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 /// <summary>
-/// Spawns a full-screen white overlay, fades it in, loads the requested scene,
-/// then fades it back out. Survives the scene load via DontDestroyOnLoad, so the
-/// transition stays smooth. Created at runtime — nothing to place in the scene.
+/// Spawns a full-screen white overlay, fades it in, performs an action at peak
+/// white (load a scene, teleport, anything), then fades back out. Survives scene
+/// loads via DontDestroyOnLoad. Created at runtime -- nothing to place in the scene.
 /// </summary>
 public class ScreenFader : MonoBehaviour
 {
+    /// <summary>Fade to white, load a scene (only if it exists in Build Settings), fade back in.</summary>
     public static void FadeToScene(string sceneName, float duration)
+    {
+        Create().Begin(duration, () =>
+        {
+            // Placeholder-safe: only load if the scene is actually available.
+            if (!string.IsNullOrEmpty(sceneName) && Application.CanStreamedLevelBeLoaded(sceneName))
+                SceneManager.LoadScene(sceneName);
+        });
+    }
+
+    /// <summary>Fade to white, run an action (e.g. teleport the player), fade back in.</summary>
+    public static void FadeAndRun(float duration, Action atWhite)
+    {
+        Create().Begin(duration, atWhite);
+    }
+
+    static ScreenFader Create()
     {
         var go = new GameObject("ScreenFader",
             typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster), typeof(Image));
         DontDestroyOnLoad(go);
-        go.AddComponent<ScreenFader>().Begin(sceneName, duration);
+        return go.AddComponent<ScreenFader>();
     }
 
-    void Begin(string sceneName, float duration) => StartCoroutine(Run(sceneName, duration));
+    void Begin(float duration, Action atWhite) => StartCoroutine(Run(duration, atWhite));
 
-    IEnumerator Run(string sceneName, float duration)
+    IEnumerator Run(float duration, Action atWhite)
     {
         var canvas = GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -30,18 +48,10 @@ public class ScreenFader : MonoBehaviour
         img.raycastTarget = true;    // block input during the transition
         img.color = new Color(1f, 1f, 1f, 0f);
 
-        yield return Fade(img, 0f, 1f, duration);            // fade to white
-
-        // Placeholder-safe: only transition if the scene exists and is in Build Settings.
-        // Until then the click just flashes to white and back. Add the scene later and it
-        // starts transitioning automatically -- no code changes needed.
-        if (!string.IsNullOrEmpty(sceneName) && Application.CanStreamedLevelBeLoaded(sceneName))
-        {
-            yield return SceneManager.LoadSceneAsync(sceneName); // swap scenes under the white
-            yield return null;                                   // let the new scene settle a frame
-        }
-
-        yield return Fade(img, 1f, 0f, duration);            // fade back in
+        yield return Fade(img, 0f, 1f, duration); // fade to white
+        atWhite?.Invoke();                         // load scene / teleport / etc.
+        yield return null;                         // settle a frame under the white
+        yield return Fade(img, 1f, 0f, duration); // fade back in
         Destroy(gameObject);
     }
 
