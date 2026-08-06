@@ -8,8 +8,9 @@ using UnityEngine.EventSystems;
 /// - Once the quest at that location is complete, call <see cref="CompleteQuest"/>:
 ///   the marker hides itself and can no longer be clicked/teleported to.
 ///
-/// Needs an EventSystem + GraphicRaycaster in the scene and a raycastable Image
-/// on this object (RaycastTarget on).
+/// Registers itself with <see cref="QuestManager"/> so other scenes (e.g. the map
+/// button) can tell when every quest is done. Needs an EventSystem + GraphicRaycaster
+/// in the scene and a raycastable Image on this object (RaycastTarget on).
 /// </summary>
 [RequireComponent(typeof(RectTransform))]
 public class QuestMarker : MonoBehaviour,
@@ -30,8 +31,12 @@ public class QuestMarker : MonoBehaviour,
     public float fadeDuration = 1f;
 
     [Header("Quest state")]
+    [Tooltip("Unique id for this quest. Leave empty to use the GameObject's name.")]
+    public string questId;
     [Tooltip("False while the quest is unfinished. Becomes true (and the marker hides) once CompleteQuest() is called.")]
     public bool questComplete = false;
+
+    string Id => string.IsNullOrEmpty(questId) ? gameObject.name : questId;
 
     RectTransform rect;
     Vector3 baseScale;
@@ -41,12 +46,19 @@ public class QuestMarker : MonoBehaviour,
     {
         rect = (RectTransform)transform;
         baseScale = rect.localScale;
+        QuestManager.Register(Id);            // count this quest toward the total
+        if (questComplete) QuestManager.Complete(Id);
     }
 
     void OnEnable()
     {
-        // If the quest is already complete when the map loads, don't show the marker.
-        if (questComplete) gameObject.SetActive(false);
+        // If this quest is already complete (this session), don't show the marker.
+        if (questComplete || QuestManager.IsComplete(Id))
+        {
+            questComplete = true;
+            QuestManager.Complete(Id);
+            gameObject.SetActive(false);
+        }
     }
 
     public void OnPointerEnter(PointerEventData e) => hovered = true;
@@ -77,11 +89,13 @@ public class QuestMarker : MonoBehaviour,
 
     /// <summary>
     /// Call this when the quest at this location is finished. Marks it complete,
-    /// hides the unfinished-quest image, and prevents any further teleporting here.
+    /// hides the unfinished-quest image, records it with the QuestManager, and
+    /// prevents any further teleporting here.
     /// </summary>
     public void CompleteQuest()
     {
         questComplete = true;
+        QuestManager.Complete(Id);
         gameObject.SetActive(false); // hide the unfinished-quest image
     }
 }
